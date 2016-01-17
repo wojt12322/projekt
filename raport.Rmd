@@ -1,0 +1,402 @@
+---
+title: "Zaawansowana Eksploracja Danych - Raport"
+author: "Wojciech Przybylski"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document: 
+    fig_height: 11
+    fig_width: 16
+    keep_md: yes
+    toc: yes
+    css: flat-table.css
+---
+### Podsumowanie
+
+Analizując badany zbór danych doszedłem do wniosku, że bez znajomości wiedzy biznesowej w tym przypadku wiedzy Biologa, można wyciągnąć sensowne dane. Jednak uważam, gdyby moja wiedza na dany temat była większa można by wyciągnąć znacznie lepsze dane. Współpraca informatykow z dziedziny eksploracji danych z przedstawicielami różnych gałęzi nauki może pomóc wyciągnąć różne zależności pomiędzy danymi, które mogą przyczynić się do ciekawych odkryć naukowych. W analizowanym zbiorze danych nietóre zmiennie przechowywały stałe wartości które nie były bardzo wartościowe, zostały oczyszczone. Od 8 zadania praca bardzo się komplikowała z powodu braku wiedzy biznesowej oraz znajomości języka R, każde zadanie zostało zrealizowane przez wiele godzin/dni w celu uzyskania najsensowniejszego oraz czytelnego wyniku zadania. W rezultacie wielu prób poznałem dobrze język R, bibliotekę ggplot oraz kintr'a.
+
+### 1. Kod wyliczający wykorzystane biblioteki.
+
+Poniżej znajdują się wykorzystane biblioteki w projekcie.
+
+```{r, loadLibraries, warning=FALSE, message=FALSE}
+library(knitr)
+library(dplyr)
+library(corrplot)
+library(ggplot2)
+library(ggExtra)
+library(gridExtra)
+library(RColorBrewer)
+library(caret)
+```
+
+### 2. Kod zapewniający powtarzalność wyników przy każdym uruchomieniu raportu na tych samych danych;
+
+Poniżej znajduje się kod zapewniający powtatzalność wyników.
+
+```{r, cache=TRUE, initialSeed}
+set.seed(23)
+```
+
+### 3. Kod pozwalający wczytać dane z pliku;
+
+Poniżej znajduje się kod pozwalający wczytać dane z pliku.
+
+```{r, cache=TRUE, loadData}
+data<-read.csv("all_summary.txt", sep =";", header = TRUE)
+
+```
+
+### 4. Kod usuwający z danych wiersze posiadające wartość zmiennej res_name równą: “DA”,“DC”,“DT”, “DU”, “DG”, “DI”,“UNK”, “UNX”, “UNL”, “PR”, “PD”, “Y1”, “EU”, “N”, “15P”, “UQ”, “PX4” lub “NAN”;
+
+Poniżej znajduję się kod usuwający wiersze zadane wiersze.
+
+```{r, cache=TRUE, cleanData}
+res_name_filter_values <-c('DA','DC','DT','DU','DG','DI','UNK','UNX','UNL','PR','PD','Y1','EU','N','15P','UQ','PX4','NAN')
+data <- filter(data,!(res_name %in% res_name_filter_values))
+
+```
+
+### 5. Kod pozostawiający tylko unikatowe pary wartości (pdb_code, res_name)
+
+Poniżej znaduje się kod pozastawiający tylko unikalne wartości (pdb_code, res_name).
+
+```{r, cache=TRUE, onlyUniqueValues}
+data <- distinct(data, pdb_code, res_name)
+```
+
+### 6. Krótkie podsumowanie wartości w każdej kolumnie;
+
+Poniżej znajduję się kod wyświetlacący podsumowanie wartości w każdej kolumnie. Można zauważyć, że zbiór posiada bardzo wiele wartości NA.
+
+```{r, cache=TRUE, summaryColumns}
+kable(summary(data))
+```
+
+### 7. Sekcje sprawdzającą korelacje między zmiennymi; sekcja ta powinna zawierać jakąś formę graficznej prezentacji korelacji;
+
+Poniżej znaduje się kod, który generuje diagrm koleracji w formie graficznej. Zostały wyczyszczone zmienne, które są stałymi oraz kolumny z samymi wartościami NAN.
+
+```{r, cache=TRUE, onlyUniqueValues12, fig.width=21, fig.height=21}
+
+data_without_constants <- data %>% select(which(sapply(., is.numeric)))
+                   data_without_first_11_NAN_columns <-select(data_without_constants, -(local_BAa:local_ZD_plus_a))
+                   data_without_other_other_NAN_columns <- select(data_without_first_11_NAN_columns, -local_min, -grid_space, -solvent_radius, -solvent_opening_radius, -resolution_max_limit)
+                   data_without_parts <-select(data_without_other_other_NAN_columns, -starts_with("part_"))
+                   
+data_without_na <-na.omit(data_without_parts)
+corgraph <- cor(data_without_na) 
+corrplot(corgraph, method = "color",  title="Korelogram dla podstawowych kolumn", tl.cex=1,tl.col="black",mar=c(1,0,1,0))
+```
+
+### 8. Określenie ile przykładów ma każda z klas (res_name);
+
+Poniżej znaduje się kod pokazujący ilość przykładów dla wszystkich klas, oraz kod pokazujący tabele z 30 najliczniejszymi klasami, oraz kod pokazujący wykres z 10 najliczniejszymi klasami.
+
+Liczba przykładów dla wszystkich klas:
+
+```{r, cache=TRUE, resNameClassesAll}
+number_class_examples <- group_by(data, res_name) %>% summarize(count_examples = n())
+length(number_class_examples$res_name)
+```
+
+Tabela z 30 najliczniejszymi klasami:
+
+```{r, cache=TRUE, resNameClasses30}
+first_30_largest_classes<-head(arrange(number_class_examples, desc(count_examples)),30)
+kable(first_30_largest_classes)
+```      
+
+Wykres reprezentujący 10 najliczniejszych klas:
+
+```{r, cache=TRUE, resNameClasses30Diagram}
+first_10_largest_classes<-head(arrange(number_class_examples, desc(count_examples)),10)
+ggplot(first_10_largest_classes, aes(reorder(res_name,-count_examples),count_examples, fill=count_examples))+
+    geom_bar(stat="identity")+ 
+    ggtitle("10 najliczniejszych klas w zbiorze")+
+    xlab("Klasy res_name") +
+    ylab("Liczba przykładów")+
+    scale_fill_gradientn(guide = guide_legend(title = "Skala w kolorach"), colours=rev(brewer.pal(11,"Spectral")))+
+    theme_bw()
+```
+
+### 9. Wykresy rozkładów liczby atomów (local_res_atom_non_h_count) i elektronów (local_res_atom_non_h_electron_sum);
+
+Poniżej znajduje sie kod generujący wykres dla liczby atomów oraz osobny dla liczby elektronów. Ostatni wykres przedstawia nałożenie elektronów i atomów na jednej skali.
+
+```{r, cache=TRUE, plotElectronsAndAtoms}
+for_plots <- data %>% select(local_res_atom_non_h_count,local_res_atom_non_h_electron_sum)
+         
+ggplot(data,aes(x=local_res_atom_non_h_count))+
+    stat_density( fill="#29a329",colour="black")+
+    theme_bw()+ 
+    ggtitle("Rozkład liczby atomów dla local_res_atom_non_h_count")+
+    ylab("Gęstość")+
+    xlab("Liczba atomów")
+
+ggplot(data,aes(x=local_res_atom_non_h_electron_sum))+
+    stat_density( fill="#cc2900",colour="black")+
+    theme_bw()+ 
+    ggtitle("Rozkład liczby elektronów dla local_res_atom_non_h_electron_sum")+
+    ylab("Gęstość")+
+    xlab("Liczba elektronów")
+
+
+two_atoms_item_for_plot <- rbind(
+                    data.frame(value=data$local_res_atom_non_h_count, name="local_res_atom_non_h_count"),
+                    data.frame(value=data$local_res_atom_non_h_electron_sum, name="local_res_atom_non_h_electron_sum"))
+                    
+ggplot(two_atoms_item_for_plot, aes(x = value, fill=name, alpha=0.25)) + geom_density()+
+    scale_fill_manual(values=c("#29a329","#cc2900"),name="Legenda")+
+    theme_bw()+ 
+    ggtitle("Nałozony rozkład liczby atomów oraz elektronów")+
+    ylab("Gęstość")+
+    xlab("Liczba atomów/elektronów")+
+    scale_alpha_continuous(guide = guide_legend(title = "Poziom alpha"))
+
+```
+
+### 10. Próbę odtworzenia następującego wykresu (oś X - liczba elektronów, oś y - liczba atomów): 
+
+Poniżej znajduje się kod próbujący odtworzyć wykres z zadania. Próba połączenia 3 diagramow została wykonana dwoma funkcjami:
+- grid.arrange
+- ggMarinal
+
+Obie fukncke pochodzą z biblioteki ggExtra. Funkcja grid.arrange pozwala na wiekszą kontrolę rozłożenia wykresów po bokach. Można dowolnie przesówać w wszystkie strony wykres znajdujący się po bokach. Funkcja ggMarginal jest łatwiejsza w użyciu ponieważ potrzebuje mniej danych. Ale nie można wpłynac za bardzo na wykresy boczne. 
+
+Poniżej znajduje się kod wykorzystujący funkcje ggMarginal z biblioteki ggExtra. Wykresy przypominają wykres który tzreba było odwzorować. Po bardzo wielu godzinach prób odtworzenia wykresu doszedłem do wniosku, że do wykres, który jest do odtworzenia musiał zostać stworzony na innych danych niż te co w zadaniu.
+
+```{r, cache=TRUE, ggMarginal}
+central_plot <- ggplot(data,aes(x = local_res_atom_non_h_electron_occupancy_sum, y = local_res_atom_non_h_occupancy_sum))+
+      stat_density2d(aes(fill = ..density..), contour = FALSE,geom = "tile", n = 250)+
+      scale_y_continuous(expand = c(0,0),breaks = seq(0,100,20))+
+      scale_x_continuous(expand = c(0,0),breaks = seq(0,600,100))+
+      scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral")))+
+      coord_cartesian(xlim = c(0,650), ylim = c(0,100))+
+      guides(fill=FALSE)+ 
+      theme(axis.title.x = element_blank(),axis.title.y = element_blank())
+
+ggMarginal(central_plot,
+      type = 'histogram',
+      size = 4,
+      fill="red", 
+      xparams = list(binwidth = 6),yparams = list(binwidth = 1))
+```
+    
+Poniżej znajduje się dodatkowy kod który trzeba było napisać by skorzystać z biblioteki grid.arrange. Wykresy boczne dopasowane idealnie.
+ 
+```{r, cache=TRUE, gridArrange}       
+histogram_for_localElectronSum<- ggplot(data, aes(local_res_atom_non_h_electron_sum)) + 
+        geom_histogram(binwidth=6, colour="black",fill="red")+
+        theme( 
+            axis.title.x = element_blank(),
+            axis.title.y = element_blank(),
+            panel.background=element_blank(),
+            panel.grid.minor=element_blank(),
+            panel.grid.major=element_blank(),
+            axis.text.x=element_blank(),
+            axis.text.y=element_blank(),
+            axis.ticks=element_blank(),legend.position="none",
+            plot.margin=unit(c(0,-12,1,-5), "mm"))
+        
+histogram_for_localResAtomCount<- ggplot(data, aes(local_res_atom_non_h_count)) +
+        geom_histogram(binwidth=1.3, colour="black",fill="red")+
+        theme( 
+            axis.title.x = element_blank(),
+            axis.title.y = element_blank(),
+            panel.background=element_blank(),
+            panel.grid.minor=element_blank(),
+            panel.grid.major=element_blank(),
+            axis.text.x=element_blank(),
+            axis.text.y=element_blank(),
+            axis.ticks=element_blank(),
+            plot.margin=unit(c(-5,0,-7,1), "mm"))+
+            coord_flip()
+    
+empty<-ggplot(data)+geom_blank()+theme(panel.background=element_blank()) 
+
+grid.arrange(
+        histogram_for_localElectronSum, 
+        empty, central_plot, 
+        histogram_for_localResAtomCount ,
+        ncol=2, nrow=2,widths=c(3,1), heights=c(1,3))
+
+```
+
+### 11. Tabelę pokazującą 10 klas z największą niezgodnością liczby atomów (local_res_atom_non_h_count vs dict_atom_non_h_count) i tabelę pokazującą 10 klas z największą niezgodnością liczby elektronów (local_res_atom_non_h_electron_sum vs dict_atom_non_h_electron_sum;)
+
+Ponizej znajduje się kod pokazujący tabelę z dzięsięcioma klasami, które zawierają największa liczbę niezgodności atomów.
+
+```{r, cache=TRUE, uniqueAtom}
+inconsonant_data<-mutate(data, niezgodność=abs(local_res_atom_non_h_count-dict_atom_non_h_count))
+inconsonant_atom_values<-select(inconsonant_data, res_name, local_res_atom_non_h_count, dict_atom_non_h_count,niezgodność)
+
+max_unique<-do.call(rbind,lapply(
+      split(inconsonant_atom_values,inconsonant_atom_values$res_name),
+      function(chunk) chunk[which.max(chunk$niezgodność),]))
+
+kable(head(arrange(max_unique,desc(niezgodność)),10))
+```
+
+Ponizej znajduje się kod pokazujący tablę z dzięsięcioma klasami, która zawiera największa liczbę niezgodności elektronów
+
+```{r, cache=TRUE, uniqueElectron}
+inconsonant_data<-mutate(data, niezgodność=abs(local_res_atom_non_h_electron_sum-dict_atom_non_h_electron_sum))
+inconsonant_atom_values<-select(inconsonant_data, res_name, local_res_atom_non_h_electron_sum, dict_atom_non_h_electron_sum,niezgodność)
+max_unique<-do.call(rbind,lapply(
+      split(inconsonant_atom_values,inconsonant_atom_values$res_name),
+      function(chunk) chunk[which.max(chunk$niezgodność),]))
+
+kable(head(arrange(max_unique,desc(niezgodność)),10))
+```
+
+### 12. Sekcję pokazującą rozkład wartości wszystkich kolumn zaczynających się od part_01 z zaznaczeniem (graficznym i liczbowym) średniej wartości;
+
+Poniżej znajduję się kod, który generuje wykresy dla wszystkich kolumn zaczynących się od part_01 z zaznaczaniem na wykresie linią przerywaną oraz tekstowo wartość średnią. W wielu przypadkach występuje średnia równa zeru, jest to spowodowane brakiem danych w kolumnach.
+
+```{r, cache=TRUE, partsDiagrams, message=FALSE, warning=FALSE}
+data <- data %>% replace(is.na(.), 0)
+part_01 <- select(data,starts_with("part_01"))
+for(i in seq_along(part_01)) {
+    average_values <- mean(part_01[,i], rm.na=TRUE)
+    
+    plot<-ggplot(data, aes(part_01_blob_electron_sum)) + 
+        geom_histogram(aes(binwidth=300, fill = ..count..))+
+        geom_vline(data = NULL, aes(xintercept=average_values), linetype = "dashed", size=2)+
+        geom_text(data=NULL, mapping=aes(x=average_values, y=0,
+                                         label=paste("Wartość średnia = ",
+                                                     round(average_values, digits =4))),
+                  colour="black", size=8, vjust=-0.5,angle=90, hjust=-0.1)+
+      scale_fill_gradientn(guide = guide_legend(title = "Skala w kolorach"), colours=rev(brewer.pal(11,"Spectral")))+
+      ggtitle(paste("Rozkład wartości dla atrybutu ",colnames(part_01[i])))+  
+      ylab("Liczność")+
+      theme_bw()
+    
+print(plot)
+}
+```
+
+### 13. Sekcję sprawdzającą czy na podstawie wartości innych kolumn można przewidzieć liczbę elektronów i atomów oraz z jaką dokładnością można dokonać takiej predykcji; trafność regresji powinna zostać oszacowana na podstawie miar R^2 i RMSE;
+
+Poniżej znajduję się kod pokazyjcący modele regresji liniowej do sprawdzenia czy na podstawie warości innych kolumn mozna przewidzieć liczbe elektronów i atomów. W tabeli jest podana trafność regresji dla miar R^2 i RMSE. Również został zaprezentowany wykres predycji wartości.
+
+Przewidywanie liczby atomów. Kroki:
+
+1. Przygotowanie danych
+
+```{r, cache=TRUE, prediscitonAtom, message=FALSE, warning=FALSE}
+data_without_constants <- data %>% select(which(sapply(., is.numeric)))
+data_without_first_11_NAN_columns <-select(data_without_constants, -(local_BAa:local_ZD_plus_a))
+data_without_other_other_NAN_columns <- select(data_without_first_11_NAN_columns, -local_min, -grid_space, -solvent_radius, -solvent_opening_radius, -resolution_max_limit)
+data_without_NA <- data_without_other_other_NAN_columns %>% replace(is.na(.), 0)
+
+ctrl <- trainControl(method = "repeatedcv", number = 8 ,repeats = 4)
+```
+
+2. Przewidywanie liczby atomów
+
+```{r, cache=TRUE, prediscitonAtomTrain, message=FALSE, warning=FALSE}
+ctrl <- trainControl(method = "repeatedcv", number = 8, repeats = 4)
+
+fit <- train(local_res_atom_non_h_count ~ ., 
+     data = data_without_NA, 
+     method = "lm",
+     trControl = ctrl)
+           
+fitSummary<- summary(fit)
+kable(data.frame(RSquared=fitSummary$r.squared, RMSE=fitSummary$sigma))
+```
+
+
+3. Wykres predycji wartości
+
+```{r, cache=TRUE, prediscitonAtomDiagram, message=FALSE, warning=FALSE}
+predicted<-predict(fit)
+               
+predictionModelTraining<-data.frame(Observed = data_without_NA$local_res_atom_non_h_count, Predicted=predicted)
+               
+ggplot(data = predictionModelTraining, aes(Predicted,Observed))+ 
+      geom_point()+
+      theme_bw()+
+      stat_smooth(method="lm",fullrange=TRUE)+
+      ggtitle("Wykres predykcji dla local_res_atom_non_h_count")
+```
+
+
+Przewidywanie liczby elektronów Kroki:
+
+1. Przewidywanie liczby elektronów
+
+```{r, cache=TRUE, predictionElectron, message=FALSE, warning=FALSE}
+fit <- train(local_res_atom_non_h_electron_sum ~ ., 
+      data = data_without_NA, 
+      method = "lm",
+      trControl = ctrl)
+               
+fitSummary<- summary(fit)
+
+kable(data.frame(RSquared=fitSummary$r.squared, RMSE=fitSummary$sigma))
+```
+
+
+2. Wykres predycji wartości
+
+```{r, cache=TRUE, predictionElectronDiagram, message=FALSE, warning=FALSE}      
+predicted<-predict(fit)
+               
+predictionModelTraining<-data.frame(Observed = data_without_NA$local_res_atom_non_h_electron_sum, Predicted=predicted)
+               
+ggplot(data = predictionModelTraining, aes(Predicted,Observed))+ 
+      geom_point()+
+      theme_bw()+stat_smooth(method="lm",fullrange=TRUE)+
+      ggtitle("Wykres predykcji dla local_res_atom_non_h_electron_sum")
+```
+
+### 14. Sekcję próbującą stworzyć klasyfikator przewidujący wartość atrybutu res_name (w tej sekcji należy wykorzystać wiedzę z pozostałych punktów oraz wykonać dodatkowe czynności, które mogą poprawić trafność klasyfikacji); klasyfikator powinien być wybrany w ramach optymalizacji parametrów na zbiorze walidującym; przewidywany błąd na danych z reszty populacji powinien zostać oszacowany na danych inne niż uczące za pomocą mechanizmu (stratyfikowanej!) oceny krzyżowej lub (stratyfikowanego!) zbioru testowego.
+
+Poniżej znajduje się kod tworzący klasyfikator dla przewidywania wartości res_name. Klasyfikator przeiwduje watości zmiennych większych lub równych 50 w celu ograniczenia zbioru danych. Z wcześniejszych obserwacji oraz na podstawie opisu danych wyeliminowałem klasy, które zawierają wartości NA oraz są niepotrzebne do stworzenia klasyfikatora. Na podstawie ConfusionMatrif byClass stwierdzam, że klasyfikator w niektórch przypadkach jest niedokładny ponieważ dla niektórych klas wystepuje znaczny błąd.
+
+```{r, cache=TRUE, classfication14, message=FALSE, warning=FALSE}         
+filtered_data <- select(data, -(1:2),-(4:31),-local_min, -fo_col, -fc_col, -grid_space, -weight_col,-solvent_radius,-solvent_opening_radius,-part_step_FoFc_std_min,-part_step_FoFc_std_max,-part_step_FoFc_std_step) 
+res_name_longest <- group_by(filtered_data, res_name) %>%  summarise(count = n()) %>%   filter(count >= 50) 
+filtered_data <- filtered_data %>%  filter(!is.na(res_name),res_name %in% res_name_longest$res_name)
+filtered_data <- filtered_data[complete.cases(filtered_data),]
+filtered_data$res_name <- as.factor(as.vector(filtered_data$res_name))
+
+inTraining <- createDataPartition(
+        y = filtered_data$res_name,
+        p = .75,
+        list = FALSE)
+
+training <- filtered_data[ inTraining,]
+testing  <- filtered_data[-inTraining,]
+
+ctrl <- trainControl(
+    method = "repeatedcv",
+    number = 4,
+    repeats = 2)
+    
+grid <- expand.grid(mtry = 10:30)
+
+fit <- train(res_name ~., 
+               data=training, 
+               method="rf", 
+               trControl = ctrl,
+               tuneGrid = grid,
+               ntree = 20)
+               
+fit
+prediction <- predict(fit, testing)            
+confusionMatrix <- confusionMatrix(prediction, testing$res_name)           
+kable(confusionMatrix$byClass)
+
+predicted<-predict(fit)
+               
+predictionModelTraining<-data.frame(Observed = training$res_name, Predicted=predicted)
+               
+ggplot(data = predictionModelTraining, aes(Predicted,Observed))+ 
+      geom_point()+
+      theme_bw()+stat_smooth(method="lm",fullrange=TRUE)+
+      ggtitle("Wykres predykcji dla res_name")
+
+```
+               
